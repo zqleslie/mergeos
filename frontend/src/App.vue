@@ -3309,7 +3309,7 @@ const sidebarSections = [
       { label: 'My Projects', icon: FolderKanban, active: true, toast: 'Opening projects...' },
       { label: 'Tasks', icon: ListTodo, toast: 'Opening tasks...' },
       { label: 'Repositories', icon: GitBranch, toast: 'Opening repositories...' },
-      { label: 'Payments', icon: CreditCard, toast: 'Opening payments...' },
+      { label: 'Payments', icon: CreditCard, section: 'payments' },
       { label: 'Notifications', icon: Bell, section: 'notifications' },
     ],
   },
@@ -3336,7 +3336,7 @@ const topNavItems = [
   { label: 'Projects', toast: 'Opening projects...' },
   { label: 'Marketplace', page: 'marketplace' },
   { label: 'Repos', toast: 'Opening repositories...' },
-  { label: 'Payments', toast: 'Opening payments...' },
+  { label: 'Payments', section: 'payments' },
   { label: 'Analytics', toast: 'Opening analytics...' },
 ];
 
@@ -4580,4 +4580,49 @@ onUnmounted(() => {
   }
   stopDashboardRealtime();
 });
+const paymentHistory = ref([])
+const paymentHistoryLoading = ref(false)
+const paymentHistoryError = ref('')
+const dashboardPaymentHistory = ref(null)
+const paymentHistoryRows = computed(() =>
+  paymentHistory.value
+    .filter(e => e.type === 'payment_verified' || e.type === 'task_payment' || e.type === 'escrow_release')
+    .slice().reverse().slice(0, 20)
+    .map(e => {
+      const meta = ledgerMetaFor(e.type)
+      const project = dashboardProjectLedger.value.find(p => p.project_id === e.project_id)
+      return {
+        id: e.key || e.sequence,
+        title: project?.title || 'Project payment',
+        description: `${meta.type}${e.reference ? ' - ' + shortLedgerReference(e.reference) : ''}`,
+        amount: e.amount_cents ? formatLedgerMRGFromCents(e.amount_cents) : '',
+        amountTone: e.type === 'payment_verified' ? 'positive' : 'neutral',
+        tone: meta.tone,
+        icon: meta.icon,
+        time: formatLedgerDateTime(e.created_at).full,
+      }
+    })
+)
+async function loadPaymentHistory() {
+  paymentHistoryLoading.value = true
+  paymentHistoryError.value = ''
+  try {
+    const token = localStorage.getItem('mergeos_token')
+    const h = { 'Content-Type': 'application/json' }
+    if (token) h['Authorization'] = 'Bearer ' + token
+    const resp = await fetch('/api/ledger', { headers: h })
+    if (resp.ok) {
+      const data = await resp.json()
+      paymentHistory.value = Array.isArray(data) ? data : (data.entries || [])
+    }
+  } catch (err) {
+    paymentHistoryError.value = err.message || 'Could not load payment records'
+  } finally {
+    paymentHistoryLoading.value = false
+  }
+}
+watch(openDashboardSection, (section) => {
+  if (section === 'payments' && !paymentHistory.value.length) loadPaymentHistory()
+})
+
 </script>
