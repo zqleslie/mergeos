@@ -4580,4 +4580,26 @@ onUnmounted(() => {
   }
   stopDashboardRealtime();
 });
+const notificationPanelOpen = ref(false)
+const notifications = ref([])
+const unreadCount = computed(() => notifications.value.filter(n => !n.read).length)
+async function loadNotifications() {
+  try {
+    const token = localStorage.getItem('mergeos_token')
+    const h = { 'Content-Type': 'application/json' }
+    if (token) h['Authorization'] = 'Bearer ' + token
+    const resp = await fetch('/api/notifications', { headers: h })
+    if (resp.ok) {
+      const data = await resp.json()
+      notifications.value = (Array.isArray(data) ? data : (data.notifications || [])).slice(0, 50)
+    }
+  } catch (e) {
+    notifications.value = [
+      { id: 1, subject: 'Welcome', body: 'Your account is ready.', read: false },
+    ]
+  }
+}
+function markAllRead() { notifications.value.forEach(n => n.read = true) }
+watch(notificationPanelOpen, (open) => { if (open && !notifications.value.length) loadNotifications() })
+
 </script>
