@@ -1044,10 +1044,60 @@
         </nav>
 
         <div class="dash-top-actions">
-          <button class="dash-icon-button" aria-label="Notifications" type="button" @click="openDashboardSection('notifications')">
-            <Bell :size="18" />
-            <span>{{ dashboardNotificationCount }}</span>
+          <button class="dash-icon-button" aria-label="Notifications" type="button" @click="toggleNotificationPanel">
+            <Bell :size="17" />
+            <span v-if="unreadNotificationCount > 0" class="notif-badge">{{ unreadNotificationCount }}</span>
           </button>
+          
+          <!-- Notification Panel Dropdown -->
+          <div v-if="notificationPanelOpen" class="notification-panel" @click.stop>
+            <div class="notification-panel-header">
+              <h3>Notifications</h3>
+              <div class="notification-panel-actions">
+                <button class="notif-action-btn" type="button" @click="markAllNotificationsRead" v-if="unreadNotificationCount > 0">
+                  <CheckCircle2 :size="14" /> Mark all read
+                </button>
+                <button class="notif-action-btn" type="button" @click="fetchNotifications">
+                  <RefreshCw :size="14" /> Refresh
+                </button>
+              </div>
+            </div>
+            <div class="notification-panel-body" v-if="!notificationsLoading">
+              <div v-if="notifications.length === 0" class="notification-empty">
+                <Bell :size="32" />
+                <p>No notifications yet</p>
+                <small>You'll see updates about your projects here</small>
+              </div>
+              <ul v-else class="notification-list">
+                <li v-for="notif in notifications" :key="notif.id" 
+                    :class="['notification-item', { unread: !notif.read }]"
+                    @click="markNotificationRead(notif)">
+                  <div class="notif-icon" :class="`notif-${notif.channel || 'info'}`">
+                    <Bell v-if="notif.channel === 'system'" :size="14" />
+                    <DollarSign v-else-if="notif.channel === 'payment'" :size="14" />
+                    <GitPullRequest v-else-if="notif.channel === 'project'" :size="14" />
+                    <MessageCircle v-else :size="14" />
+                  </div>
+                  <div class="notif-content">
+                    <strong>{{ notif.subject || 'Notification' }}</strong>
+                    <p>{{ notif.body || notif.message }}</p>
+                    <small class="notif-time">{{ formatNotificationTime(notif.created_at) }}</small>
+                  </div>
+                  <div v-if="!notif.read" class="notif-unread-dot"></div>
+                </li>
+              </ul>
+            </div>
+            <div v-else class="notification-panel-body notification-loading">
+              <RefreshCw :size="24" class="notif-spinner" />
+              <p>Loading notifications...</p>
+            </div>
+          </div>
+          <button class="primary-button compact" type="button" @click="openProjectWizard">
+            <Plus :size="16" />
+            
+          <button class="primary-button compact" type="button" @click="openProjectWizard">
+            <Plus :size="16" />
+            
           <button class="primary-button compact" type="button" @click="openProjectWizard">
             <Plus :size="16" />
             New Project
@@ -3310,7 +3360,7 @@ const sidebarSections = [
       { label: 'Tasks', icon: ListTodo, toast: 'Opening tasks...' },
       { label: 'Repositories', icon: GitBranch, toast: 'Opening repositories...' },
       { label: 'Payments', icon: CreditCard, toast: 'Opening payments...' },
-      { label: 'Notifications', icon: Bell, section: 'notifications' },
+      { label: 'Notifications', icon: Bell, action: () => { toggleNotificationPanel() } },
     ],
   },
   {
@@ -4586,4 +4636,75 @@ onUnmounted(() => {
   }
   stopDashboardRealtime();
 });
+// --- Notification System ---
+const notificationPanelOpen = ref(false);
+const notifications = ref([]);
+const notificationsLoading = ref(false);
+const unreadNotificationCount = computed(() => notifications.value.filter(n => !n.read).length);
+
+function toggleNotificationPanel() {
+  notificationPanelOpen.value = !notificationPanelOpen.value;
+  if (notificationPanelOpen.value && notifications.value.length === 0) {
+    fetchNotifications();
+  }
+}
+
+async function fetchNotifications() {
+  notificationsLoading.value = true;
+  try {
+    const token = localStorage.getItem('mergeos_token');
+    const res = await fetch('/api/notifications', {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error('Failed to fetch notifications');
+    notifications.value = await res.json();
+  } catch (err) {
+    console.error('Failed to fetch notifications:', err);
+  } finally {
+    notificationsLoading.value = false;
+  }
+}
+
+async function markNotificationRead(notif) {
+  try {
+    const token = localStorage.getItem('mergeos_token');
+    await fetch('/api/notifications/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ id: notif.id }),
+    });
+    notif.read = true;
+  } catch (err) {
+    console.error('Failed to mark notification read:', err);
+  }
+}
+
+async function markAllNotificationsRead() {
+  try {
+    const token = localStorage.getItem('mergeos_token');
+    await fetch('/api/notifications/read-all', {
+      method: 'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    });
+    notifications.value.forEach(n => n.read = true);
+  } catch (err) {
+    console.error('Failed to mark all read:', err);
+  }
+}
+
+function formatNotificationTime(dateStr) {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diff = Math.floor((now - date) / 1000);
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+</script>
+
+</script>
+
 </script>
